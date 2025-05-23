@@ -10,6 +10,17 @@ import xml.dom.minidom as minidom
 import os
 import zipfile
 import time
+from datetime import datetime
+import pytz # Importar pytz
+
+fuso_horario_servidor = pytz.utc # Assumindo que o servidor está em UTC
+fuso_horario_desejado = pytz.timezone("America/Sao_Paulo")
+
+agora_no_servidor = datetime.now(fuso_horario_servidor) # Pega a hora atual com o fuso do servidor
+agora_no_fuso_desejado = agora_no_servidor.astimezone(fuso_horario_desejado)
+
+data_atual = agora_no_fuso_desejado.strftime("%Y-%m-%d")
+hora_atual = agora_no_fuso_desejado.strftime("%H:%M:%S")
 
 @st.cache_data
 def parse_xte(file):
