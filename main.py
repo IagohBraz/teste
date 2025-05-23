@@ -13,14 +13,7 @@ import time
 from datetime import datetime
 import pytz # Importar pytz
 
-fuso_horario_servidor = pytz.utc # Assumindo que o servidor está em UTC
-fuso_horario_desejado = pytz.timezone("America/Sao_Paulo")
 
-agora_no_servidor = datetime.now(fuso_horario_servidor) # Pega a hora atual com o fuso do servidor
-agora_no_fuso_desejado = agora_no_servidor.astimezone(fuso_horario_desejado)
-
-data_atual = agora_no_fuso_desejado.strftime("%Y-%m-%d")
-hora_atual = agora_no_fuso_desejado.strftime("%H:%M:%S")
 
 @st.cache_data
 def parse_xte(file):
@@ -164,8 +157,14 @@ def gerar_xte_do_excel(excel_file):
     print("--- DEBUG: Função gerar_xte_do_excel FOI CHAMADA ---")
     ns = "http://www.ans.gov.br/padroes/tiss/schemas"
 
-    data_atual = datetime.now().strftime("%Y-%m-%d")
-    hora_atual = datetime.now().strftime("%H:%M:%S")
+    fuso_horario_servidor = pytz.utc # Assumindo que o servidor está em UTC
+    fuso_horario_desejado = pytz.timezone("America/Sao_Paulo")
+
+    agora_no_servidor = datetime.now(fuso_horario_servidor) # Pega a hora atual com o fuso do servidor
+    agora_no_fuso_desejado = agora_no_servidor.astimezone(fuso_horario_desejado)
+
+    data_atual = agora_no_fuso_desejado.strftime("%Y-%m-%d")
+    hora_atual = agora_no_fuso_desejado.strftime("%H:%M:%S")    
 
     if hasattr(excel_file, 'name') and excel_file.name.endswith('.csv'):
         df = pd.read_csv(excel_file, dtype=str, sep=';')
