@@ -144,8 +144,47 @@ def parse_xte(file):
         if col in df.columns:
             df[col] = df[col].apply(lambda x: str(int(x)) if pd.notna(x) and isinstance(x, str) and x.isdigit() else x)
 
-    return df, content, tree
+    # --- NOVO: Padronização e ordenação das colunas ---
+    df.rename(columns={
+        'valorInformado': 'valorInformado_proc',
+        'valorPagoFornecedor': 'valorPagoFornecedor_proc',
+        'dataRegistroTransacao': 'dataRegistroTransacao_cabecalho',
+        'horaRegistroTransacao': 'horaRegistroTransacao_cabecalho',
+        'registroANS': 'registroANS_cabecalho',
+        'versaoPadrao': 'versaoPadrao_cabecalho'
+    }, inplace=True)
 
+    colunas_finais = [
+        'Nome da Origem', 'tipoRegistro', 'versaoTISSPrestador', 'formaEnvio', 'tipoTransacao',
+        'numeroLote', 'competenciaLote', 'dataRegistroTransacao_cabecalho', 'horaRegistroTransacao_cabecalho',
+        'registroANS_cabecalho', 'versaoPadrao_cabecalho', 'CNES', 'identificadorExecutante',
+        'codigoCNPJ_CPF', 'municipioExecutante', 'registroANSOperadoraIntermediaria',
+        'tipoAtendimentoOperadoraIntermediaria', 'numeroCartaoNacionalSaude', 'cpfBeneficiario',
+        'sexo', 'dataNascimento', 'municipioResidencia', 'numeroRegistroPlano',
+        'tipoEventoAtencao', 'origemEventoAtencao', 'numeroGuia_prestador', 'numeroGuia_operadora',
+        'identificacaoReembolso', 'formaRemuneracao', 'valorRemuneracao', 'guiaSolicitacaoInternacao',
+        'dataSolicitacao', 'numeroGuiaSPSADTPrincipal', 'dataAutorizacao', 'dataRealizacao',
+        'dataFimPeriodo', 'dataProtocoloCobranca', 'dataPagamento', 'dataProcessamentoGuia',
+        'tipoConsulta', 'cboExecutante', 'indicacaoRecemNato', 'indicacaoAcidente',
+        'caraterAtendimento', 'tipoInternacao', 'regimeInternacao', 'tipoAtendimento',
+        'regimeAtendimento', 'tipoFaturamento', 'diariasAcompanhante', 'diariasUTI', 'motivoSaida',
+        'valorTotalInformado', 'valorProcessado', 'valorTotalPagoProcedimentos', 'valorTotalDiarias',
+        'valorTotalTaxas', 'valorTotalMateriais', 'valorTotalOPME', 'valorTotalMedicamentos',
+        'valorGlosaGuia', 'valorPagoGuia', 'valorPagoFornecedores', 'valorTotalTabelaPropria',
+        'valorTotalCoParticipacao', 'declaracaoNascido', 'declaracaoObito', 'codigoTabela',
+        'grupoProcedimento', 'codigoProcedimento', 'quantidadeInformada', 'valorInformado_proc',
+        'quantidadePaga', 'unidadeMedida', 'valorPagoProc', 'valorPagoFornecedor_proc',
+        'Idade_na_Realização', 'diagnosticoCID'
+    ]
+
+    for col in colunas_finais:
+        if col not in df.columns:
+            df[col] = None
+    df = df[colunas_finais]
+    # --- FIM NOVO ---
+
+    return df, content, tree
+    
 
 def remove_duplicate_columns(df):
     df = df.loc[:, ~df.columns.duplicated()]
