@@ -40,7 +40,7 @@ def parse_xte(file):
         'valorInformado', 'valorPagoProc', 'quantidadePaga', 'valorPagoFornecedor',
         'valorCoParticipacao', 'unidadeMedida', 'numeroGuiaSPSADTPrincipal', 'tipoInternacao',
         'regimeInternacao', 'diagnosticoCID', 'tipoFaturamento', 'motivoSaida', 'cboExecutante',
-        'dataFimPeriodo', 'declaracaoObito', 'declaracaoNascido', 'Idade_na_Realização',
+        'dataFimPeriodo','dataInicialFaturamento', 'declaracaoObito', 'declaracaoNascido', 'Idade_na_Realização',
         'registroANSOperadoraIntermediaria', 'tipoAtendimentoOperadoraIntermediaria',
         # Novos campos de cabeçalho:
         'tipoTransacao', 'numeroLote', 'competenciaLote', 'dataRegistroTransacao',
@@ -164,7 +164,7 @@ def parse_xte(file):
         'tipoEventoAtencao', 'origemEventoAtencao', 'numeroGuia_prestador', 'numeroGuia_operadora',
         'identificacaoReembolso', 'formaRemuneracao', 'valorRemuneracao', 'guiaSolicitacaoInternacao',
         'dataSolicitacao', 'numeroGuiaSPSADTPrincipal', 'dataAutorizacao', 'dataRealizacao',
-        'dataFimPeriodo', 'dataProtocoloCobranca', 'dataPagamento', 'dataProcessamentoGuia',
+        'dataFimPeriodo','dataInicialFaturamento', 'dataProtocoloCobranca', 'dataPagamento', 'dataProcessamentoGuia',
         'tipoConsulta', 'cboExecutante', 'indicacaoRecemNato', 'indicacaoAcidente',
         'caraterAtendimento', 'tipoInternacao', 'regimeInternacao', 'tipoAtendimento',
         'regimeAtendimento', 'tipoFaturamento', 'diariasAcompanhante', 'diariasUTI', 'motivoSaida',
@@ -172,8 +172,8 @@ def parse_xte(file):
         'valorTotalTaxas', 'valorTotalMateriais', 'valorTotalOPME', 'valorTotalMedicamentos',
         'valorGlosaGuia', 'valorPagoGuia', 'valorPagoFornecedores', 'valorTotalTabelaPropria',
         'valorTotalCoParticipacao', 'declaracaoNascido', 'declaracaoObito', 'codigoTabela',
-        'grupoProcedimento', 'codigoProcedimento', 'quantidadeInformada', 'valorInformado_proc',
-        'quantidadePaga', 'unidadeMedida', 'valorPagoProc', 'valorPagoFornecedor_proc',
+        'grupoProcedimento', 'codigoProcedimento', 'quantidadeInformada','valorInformado', 'valorInformado_proc',
+        'valorPagoFornecedor','quantidadePaga', 'unidadeMedida','valorCoParticipacao', 'valorPagoProc', 'valorPagoFornecedor_proc',
         'Idade_na_Realização', 'diagnosticoCID'
     ]
 
@@ -641,4 +641,3 @@ elif menu == "Converter Excel para XTE/XML":
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
             st.error("Verifique se o arquivo Excel possui a estrutura correta.")
-
