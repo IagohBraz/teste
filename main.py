@@ -193,10 +193,10 @@ def remove_duplicate_columns(df):
 
 
 def gerar_xte_do_excel(excel_file):
-    print("--- DEBUG: Gerando XTE com CRIAÇÃO CONDICIONAL de tags (versão completa) ---")
+    print("--- DEBUG: Gerando XTE com Lógica Condicional (versão completa e corrigida) ---")
     ns = "http://www.ans.gov.br/padroes/tiss/schemas"
 
-    # --- Setup de Data/Hora e Leitura do Excel ---
+    # --- Setup e Leitura do Arquivo ---
     fuso_horario_servidor = pytz.utc
     fuso_horario_desejado = pytz.timezone("America/Sao_Paulo")
     agora_no_fuso_desejado = datetime.now(fuso_horario_servidor).astimezone(fuso_horario_desejado)
@@ -208,35 +208,24 @@ def gerar_xte_do_excel(excel_file):
     else:
         df = pd.read_excel(excel_file, dtype=str)
 
-    # --- Função Auxiliar 'sub' (Coração da Lógica Condicional) ---
-    def sub(parent, tag, value, is_code=False, is_date=False):
-        """
-        Limpa um valor e cria um sub-elemento APENAS SE o valor não for vazio.
-        Trata o bug do valor '1' e formata datas.
-        """
-        text = ""
-        if not pd.isna(value):
-            text = str(value).strip()
-            # Tratamento para o erro do '1' em campos não-código
-            if text in ['1', '1.0'] and not is_code and not is_date:
-                text = ""
+    # --- Função Auxiliar 'sub' Simplificada e Correta ---
+    def sub(parent, tag, value, is_date=False):
+        if pd.isna(value):
+            return  # Se o valor for nulo, não faz nada.
+
+        text = str(value).strip()
+
+        if is_date and text:
+            original_text = text
+            text = original_text # Mantém o original por padrão se a formatação falhar
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    text = datetime.strptime(original_text, fmt).strftime("%Y-%m-%d")
+                    break
+                except ValueError:
+                    continue
         
-        if is_date:
-            # Para datas, o valor '1' também é inválido
-            if text in ['1', '1.0']:
-                text = ""
-            elif text:
-                original_text = text
-                text = "" # Reseta para garantir que só o formato correto passe
-                for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                    try:
-                        text = datetime.strptime(original_text, fmt).strftime("%Y-%m-%d")
-                        break
-                    except ValueError:
-                        continue
-        
-        # A CONDIÇÃO FINAL: Só cria a tag XML se houver texto.
-        if text:
+        if text: # A REGRA DE OURO: Só cria a tag se houver texto.
             ET.SubElement(parent, f"ans:{tag}").text = text
 
     def extrair_texto(elemento):
@@ -255,39 +244,41 @@ def gerar_xte_do_excel(excel_file):
     for nome_arquivo, df_origem in df.groupby("Nome da Origem"):
         if df_origem.empty: continue
 
+        # Agrupa por guia
         agrupado = df_origem.groupby(
             ["numeroGuia_prestador", "numeroGuia_operadora", "identificacaoReembolso"], dropna=False
         )
         
+        # Cria a estrutura raiz do XML
         root = ET.Element("ans:mensagemEnvioANS", attrib={
             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance", "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
             "xsi:schemaLocation": f"{ns} {ns}/tissMonitoramentoV1_04_01.xsd", "xmlns:ans": ns
         })
         
-        linha_cabecalho = df_origem.iloc[0]
-        
         # --- Bloco do Cabeçalho ---
+        linha_cabecalho = df_origem.iloc[0]
         cabecalho = ET.SubElement(root, "ans:cabecalho")
         identificacaoTransacao = ET.SubElement(cabecalho, "ans:identificacaoTransacao")
-        sub(identificacaoTransacao, "tipoTransacao", "MONITORAMENTO", is_code=True)
+        sub(identificacaoTransacao, "tipoTransacao", "MONITORAMENTO")
         sub(identificacaoTransacao, "numeroLote", linha_cabecalho.get("numeroLote"))
         sub(identificacaoTransacao, "competenciaLote", linha_cabecalho.get("competenciaLote"))
         sub(identificacaoTransacao, "dataRegistroTransacao", data_atual)
         sub(identificacaoTransacao, "horaRegistroTransacao", hora_atual)
-        sub(cabecalho, "registroANS", linha_cabecalho.get("registroANS_cabecalho"), is_code=True)
-        sub(cabecalho, "versaoPadrao", linha_cabecalho.get("versaoPadrao_cabecalho", "1.04.01"), is_code=True)
+        sub(cabecalho, "registroANS", linha_cabecalho.get("registroANS_cabecalho"))
+        sub(cabecalho, "versaoPadrao", linha_cabecalho.get("versaoPadrao_cabecalho", "1.04.01"))
 
         mensagem = ET.SubElement(root, "ans:Mensagem")
         op_ans = ET.SubElement(mensagem, "ans:operadoraParaANS")
 
+        # --- Loop Principal para cada Guia ---
         for _, grupo_guia_key in agrupado:
             linha_guia = grupo_guia_key.iloc[0]
             guia = ET.SubElement(op_ans, "ans:guiaMonitoramento")
 
-            # --- Mapeamento Condicional e Estruturado da Guia ---
-            sub(guia, "tipoRegistro", linha_guia.get("tipoRegistro"), is_code=True)
+            # --- Mapeamento Estruturado da Guia (Nível da Guia) ---
+            sub(guia, "tipoRegistro", linha_guia.get("tipoRegistro"))
             sub(guia, "versaoTISSPrestador", linha_guia.get("versaoTISSPrestador"))
-            sub(guia, "formaEnvio", linha_guia.get("formaEnvio"), is_code=True)
+            sub(guia, "formaEnvio", linha_guia.get("formaEnvio"))
             
             dadosContratadoExecutante_el = ET.SubElement(guia, "ans:dadosContratadoExecutante")
             sub(dadosContratadoExecutante_el, "CNES", linha_guia.get("CNES"))
@@ -295,28 +286,27 @@ def gerar_xte_do_excel(excel_file):
             sub(dadosContratadoExecutante_el, "codigoCNPJ_CPF", linha_guia.get("codigoCNPJ_CPF"))
             sub(dadosContratadoExecutante_el, "municipioExecutante", linha_guia.get("municipioExecutante"))
 
-            sub(guia, "registroANSOperadoraIntermediaria", linha_guia.get("registroANSOperadoraIntermediaria"), is_code=True)
-            sub(guia, "tipoAtendimentoOperadoraIntermediaria", linha_guia.get("tipoAtendimentoOperadoraIntermediaria"), is_code=True)
+            sub(guia, "registroANSOperadoraIntermediaria", linha_guia.get("registroANSOperadoraIntermediaria"))
+            sub(guia, "tipoAtendimentoOperadoraIntermediaria", linha_guia.get("tipoAtendimentoOperadoraIntermediaria"))
 
             dadosBeneficiario_el = ET.SubElement(guia, "ans:dadosBeneficiario")
             identBeneficiario_el = ET.SubElement(dadosBeneficiario_el, "ans:identBeneficiario")
             sub(identBeneficiario_el, "numeroCartaoNacionalSaude", linha_guia.get("numeroCartaoNacionalSaude"))
             sub(identBeneficiario_el, "cpfBeneficiario", linha_guia.get("cpfBeneficiario"))
-            sub(identBeneficiario_el, "sexo", linha_guia.get("sexo"), is_code=True)
+            sub(identBeneficiario_el, "sexo", linha_guia.get("sexo"))
             sub(identBeneficiario_el, "dataNascimento", linha_guia.get("dataNascimento"), is_date=True)
             sub(identBeneficiario_el, "municipioResidencia", linha_guia.get("municipioResidencia"))
             sub(dadosBeneficiario_el, "numeroRegistroPlano", linha_guia.get("numeroRegistroPlano"))
 
-            sub(guia, "tipoEventoAtencao", linha_guia.get("tipoEventoAtencao"), is_code=True)
-            sub(guia, "origemEventoAtencao", linha_guia.get("origemEventoAtencao"), is_code=True)
+            sub(guia, "tipoEventoAtencao", linha_guia.get("tipoEventoAtencao"))
+            sub(guia, "origemEventoAtencao", linha_guia.get("origemEventoAtencao"))
             sub(guia, "numeroGuia_prestador", linha_guia.get("numeroGuia_prestador"))
             sub(guia, "numeroGuia_operadora", linha_guia.get("numeroGuia_operadora"))
             sub(guia, "identificacaoReembolso", linha_guia.get("identificacaoReembolso"))
             
-            # Bloco de remuneração só é criado se houver dados
             if pd.notna(linha_guia.get("formaRemuneracao")) or pd.notna(linha_guia.get("valorRemuneracao")):
                 formasRemuneracao_el = ET.SubElement(guia, "ans:formasRemuneracao")
-                sub(formasRemuneracao_el, "formaRemuneracao", linha_guia.get("formaRemuneracao"), is_code=True)
+                sub(formasRemuneracao_el, "formaRemuneracao", linha_guia.get("formaRemuneracao"))
                 sub(formasRemuneracao_el, "valorRemuneracao", linha_guia.get("valorRemuneracao"))
             
             sub(guia, "guiaSolicitacaoInternacao", linha_guia.get("guiaSolicitacaoInternacao"))
@@ -329,25 +319,24 @@ def gerar_xte_do_excel(excel_file):
             sub(guia, "dataProtocoloCobranca", linha_guia.get("dataProtocoloCobranca"), is_date=True)
             sub(guia, "dataPagamento", linha_guia.get("dataPagamento"), is_date=True)
             sub(guia, "dataProcessamentoGuia", linha_guia.get("dataProcessamentoGuia"), is_date=True)
-            sub(guia, "tipoConsulta", linha_guia.get("tipoConsulta"), is_code=True)
+            sub(guia, "tipoConsulta", linha_guia.get("tipoConsulta"))
             sub(guia, "cboExecutante", linha_guia.get("cboExecutante"))
-            sub(guia, "indicacaoRecemNato", linha_guia.get("indicacaoRecemNato"), is_code=True)
-            sub(guia, "indicacaoAcidente", linha_guia.get("indicacaoAcidente"), is_code=True)
-            sub(guia, "caraterAtendimento", linha_guia.get("caraterAtendimento"), is_code=True)
-            sub(guia, "tipoInternacao", linha_guia.get("tipoInternacao"), is_code=True)
-            sub(guia, "regimeInternacao", linha_guia.get("regimeInternacao"), is_code=True)
+            sub(guia, "indicacaoRecemNato", linha_guia.get("indicacaoRecemNato"))
+            sub(guia, "indicacaoAcidente", linha_guia.get("indicacaoAcidente"))
+            sub(guia, "caraterAtendimento", linha_guia.get("caraterAtendimento"))
+            sub(guia, "tipoInternacao", linha_guia.get("tipoInternacao"))
+            sub(guia, "regimeInternacao", linha_guia.get("regimeInternacao"))
             
-            # Bloco de diagnóstico só é criado se houver CID
             if pd.notna(linha_guia.get("diagnosticoCID")):
                 diagnosticosCID10_el = ET.SubElement(guia, "ans:diagnosticosCID10")
                 sub(diagnosticosCID10_el, "diagnosticoCID", linha_guia.get("diagnosticoCID"))
             
-            sub(guia, "tipoAtendimento", linha_guia.get("tipoAtendimento"), is_code=True)
-            sub(guia, "regimeAtendimento", linha_guia.get("regimeAtendimento"), is_code=True)
-            sub(guia, "tipoFaturamento", linha_guia.get("tipoFaturamento"), is_code=True)
+            sub(guia, "tipoAtendimento", linha_guia.get("tipoAtendimento"))
+            sub(guia, "regimeAtendimento", linha_guia.get("regimeAtendimento"))
+            sub(guia, "tipoFaturamento", linha_guia.get("tipoFaturamento"))
             sub(guia, "diariasAcompanhante", linha_guia.get("diariasAcompanhante"))
             sub(guia, "diariasUTI", linha_guia.get("diariasUTI"))
-            sub(guia, "motivoSaida", linha_guia.get("motivoSaida"), is_code=True)
+            sub(guia, "motivoSaida", linha_guia.get("motivoSaida"))
 
             valoresGuia_el = ET.SubElement(guia, "ans:valoresGuia")
             sub(valoresGuia_el, "valorTotalInformado", linha_guia.get("valorTotalInformado"))
@@ -367,22 +356,23 @@ def gerar_xte_do_excel(excel_file):
             sub(guia, "declaracaoNascido", linha_guia.get("declaracaoNascido"))
             sub(guia, "declaracaoObito", linha_guia.get("declaracaoObito"))
 
+            # --- Loop Interno para cada Procedimento da Guia ---
             for _, proc_linha in grupo_guia_key.iterrows():
                 if pd.notna(proc_linha.get("codigoProcedimento")) or pd.notna(proc_linha.get("grupoProcedimento")):
                     procedimentos_el = ET.SubElement(guia, "ans:procedimentos")
                     identProcedimento_el = ET.SubElement(procedimentos_el, "ans:identProcedimento")
-                    sub(identProcedimento_el, "codigoTabela", proc_linha.get("codigoTabela"), is_code=True)
+                    sub(identProcedimento_el, "codigoTabela", proc_linha.get("codigoTabela"))
                     Procedimento_el = ET.SubElement(identProcedimento_el, "ans:Procedimento")
                     
                     if pd.notna(proc_linha.get("grupoProcedimento")):
-                        sub(Procedimento_el, "grupoProcedimento", proc_linha.get("grupoProcedimento"), is_code=True)
+                        sub(Procedimento_el, "grupoProcedimento", proc_linha.get("grupoProcedimento"))
                     elif pd.notna(proc_linha.get("codigoProcedimento")):
                         sub(Procedimento_el, "codigoProcedimento", proc_linha.get("codigoProcedimento"))
                     
                     sub(procedimentos_el, "quantidadeInformada", proc_linha.get("quantidadeInformada"))
                     sub(procedimentos_el, "valorInformado", proc_linha.get("valorInformado_proc"))
                     sub(procedimentos_el, "quantidadePaga", proc_linha.get("quantidadePaga"))
-                    sub(procedimentos_el, "unidadeMedida", proc_linha.get("unidadeMedida"), is_code=True)
+                    sub(procedimentos_el, "unidadeMedida", proc_linha.get("unidadeMedida"))
                     sub(procedimentos_el, "valorPagoProc", proc_linha.get("valorPagoProc"))
                     sub(procedimentos_el, "valorPagoFornecedor", proc_linha.get("valorPagoFornecedor_proc"))
                     sub(procedimentos_el, "valorCoParticipacao", proc_linha.get("valorCoParticipacao"))
