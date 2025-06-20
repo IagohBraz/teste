@@ -193,7 +193,7 @@ def remove_duplicate_columns(df):
 
 
 def gerar_xte_do_excel(excel_file):
-    print("--- DEBUG: Gerando XTE com criação explícita e garantida de todas as tags ---")
+    print("--- DEBUG: Gerando XTE com CRIAÇÃO CONDICIONAL de tags (versão completa) ---")
     ns = "http://www.ans.gov.br/padroes/tiss/schemas"
 
     # --- Setup de Data/Hora e Leitura do Excel ---
@@ -208,22 +208,36 @@ def gerar_xte_do_excel(excel_file):
     else:
         df = pd.read_excel(excel_file, dtype=str)
 
-    # --- Funções Auxiliares Simples e Precisas ---
-    def clean_value(value, is_code=False, is_date=False):
-        """Limpa o valor lido do Excel. Retorna sempre uma string."""
-        if pd.isna(value):
-            return ""
-        text = str(value).strip()
-        # Tratamento especial para o erro do '1' que aparece em campos vazios
-        if text in ['1', '1.0'] and not is_code:
-            return ""
-        if is_date and text:
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
-                except ValueError:
-                    continue
-        return text
+    # --- Função Auxiliar 'sub' (Coração da Lógica Condicional) ---
+    def sub(parent, tag, value, is_code=False, is_date=False):
+        """
+        Limpa um valor e cria um sub-elemento APENAS SE o valor não for vazio.
+        Trata o bug do valor '1' e formata datas.
+        """
+        text = ""
+        if not pd.isna(value):
+            text = str(value).strip()
+            # Tratamento para o erro do '1' em campos não-código
+            if text in ['1', '1.0'] and not is_code and not is_date:
+                text = ""
+        
+        if is_date:
+            # Para datas, o valor '1' também é inválido
+            if text in ['1', '1.0']:
+                text = ""
+            elif text:
+                original_text = text
+                text = "" # Reseta para garantir que só o formato correto passe
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                    try:
+                        text = datetime.strptime(original_text, fmt).strftime("%Y-%m-%d")
+                        break
+                    except ValueError:
+                        continue
+        
+        # A CONDIÇÃO FINAL: Só cria a tag XML se houver texto.
+        if text:
+            ET.SubElement(parent, f"ans:{tag}").text = text
 
     def extrair_texto(elemento):
         textos = []
@@ -255,13 +269,13 @@ def gerar_xte_do_excel(excel_file):
         # --- Bloco do Cabeçalho ---
         cabecalho = ET.SubElement(root, "ans:cabecalho")
         identificacaoTransacao = ET.SubElement(cabecalho, "ans:identificacaoTransacao")
-        ET.SubElement(identificacaoTransacao, "ans:tipoTransacao").text = clean_value("MONITORAMENTO", is_code=True)
-        ET.SubElement(identificacaoTransacao, "ans:numeroLote").text = clean_value(linha_cabecalho.get("numeroLote"))
-        ET.SubElement(identificacaoTransacao, "ans:competenciaLote").text = clean_value(linha_cabecalho.get("competenciaLote"))
-        ET.SubElement(identificacaoTransacao, "ans:dataRegistroTransacao").text = data_atual
-        ET.SubElement(identificacaoTransacao, "ans:horaRegistroTransacao").text = hora_atual
-        ET.SubElement(cabecalho, "ans:registroANS").text = clean_value(linha_cabecalho.get("registroANS_cabecalho"), is_code=True)
-        ET.SubElement(cabecalho, "ans:versaoPadrao").text = clean_value(linha_cabecalho.get("versaoPadrao_cabecalho", "1.04.01"), is_code=True)
+        sub(identificacaoTransacao, "tipoTransacao", "MONITORAMENTO", is_code=True)
+        sub(identificacaoTransacao, "numeroLote", linha_cabecalho.get("numeroLote"))
+        sub(identificacaoTransacao, "competenciaLote", linha_cabecalho.get("competenciaLote"))
+        sub(identificacaoTransacao, "dataRegistroTransacao", data_atual)
+        sub(identificacaoTransacao, "horaRegistroTransacao", hora_atual)
+        sub(cabecalho, "registroANS", linha_cabecalho.get("registroANS_cabecalho"), is_code=True)
+        sub(cabecalho, "versaoPadrao", linha_cabecalho.get("versaoPadrao_cabecalho", "1.04.01"), is_code=True)
 
         mensagem = ET.SubElement(root, "ans:Mensagem")
         op_ans = ET.SubElement(mensagem, "ans:operadoraParaANS")
@@ -270,101 +284,108 @@ def gerar_xte_do_excel(excel_file):
             linha_guia = grupo_guia_key.iloc[0]
             guia = ET.SubElement(op_ans, "ans:guiaMonitoramento")
 
-            # --- CRIAÇÃO EXPLÍCITA DE TODAS AS TAGS DA GUIA ---
-            ET.SubElement(guia, "ans:tipoRegistro").text = clean_value(linha_guia.get("tipoRegistro"), is_code=True)
-            ET.SubElement(guia, "ans:versaoTISSPrestador").text = clean_value(linha_guia.get("versaoTISSPrestador"))
-            ET.SubElement(guia, "ans:formaEnvio").text = clean_value(linha_guia.get("formaEnvio"), is_code=True)
+            # --- Mapeamento Condicional e Estruturado da Guia ---
+            sub(guia, "tipoRegistro", linha_guia.get("tipoRegistro"), is_code=True)
+            sub(guia, "versaoTISSPrestador", linha_guia.get("versaoTISSPrestador"))
+            sub(guia, "formaEnvio", linha_guia.get("formaEnvio"), is_code=True)
             
             dadosContratadoExecutante_el = ET.SubElement(guia, "ans:dadosContratadoExecutante")
-            ET.SubElement(dadosContratadoExecutante_el, "ans:CNES").text = clean_value(linha_guia.get("CNES"))
-            ET.SubElement(dadosContratadoExecutante_el, "ans:identificadorExecutante").text = clean_value(linha_guia.get("identificadorExecutante"))
-            ET.SubElement(dadosContratadoExecutante_el, "ans:codigoCNPJ_CPF").text = clean_value(linha_guia.get("codigoCNPJ_CPF"))
-            ET.SubElement(dadosContratadoExecutante_el, "ans:municipioExecutante").text = clean_value(linha_guia.get("municipioExecutante"))
+            sub(dadosContratadoExecutante_el, "CNES", linha_guia.get("CNES"))
+            sub(dadosContratadoExecutante_el, "identificadorExecutante", linha_guia.get("identificadorExecutante"))
+            sub(dadosContratadoExecutante_el, "codigoCNPJ_CPF", linha_guia.get("codigoCNPJ_CPF"))
+            sub(dadosContratadoExecutante_el, "municipioExecutante", linha_guia.get("municipioExecutante"))
 
-            ET.SubElement(guia, "ans:registroANSOperadoraIntermediaria").text = clean_value(linha_guia.get("registroANSOperadoraIntermediaria"), is_code=True)
-            ET.SubElement(guia, "ans:tipoAtendimentoOperadoraIntermediaria").text = clean_value(linha_guia.get("tipoAtendimentoOperadoraIntermediaria"), is_code=True)
+            sub(guia, "registroANSOperadoraIntermediaria", linha_guia.get("registroANSOperadoraIntermediaria"), is_code=True)
+            sub(guia, "tipoAtendimentoOperadoraIntermediaria", linha_guia.get("tipoAtendimentoOperadoraIntermediaria"), is_code=True)
 
             dadosBeneficiario_el = ET.SubElement(guia, "ans:dadosBeneficiario")
             identBeneficiario_el = ET.SubElement(dadosBeneficiario_el, "ans:identBeneficiario")
-            ET.SubElement(identBeneficiario_el, "ans:numeroCartaoNacionalSaude").text = clean_value(linha_guia.get("numeroCartaoNacionalSaude"))
-            ET.SubElement(identBeneficiario_el, "ans:cpfBeneficiario").text = clean_value(linha_guia.get("cpfBeneficiario"))
-            ET.SubElement(identBeneficiario_el, "ans:sexo").text = clean_value(linha_guia.get("sexo"), is_code=True)
-            ET.SubElement(identBeneficiario_el, "ans:dataNascimento").text = clean_value(linha_guia.get("dataNascimento"), is_date=True)
-            ET.SubElement(identBeneficiario_el, "ans:municipioResidencia").text = clean_value(linha_guia.get("municipioResidencia"))
-            ET.SubElement(dadosBeneficiario_el, "ans:numeroRegistroPlano").text = clean_value(linha_guia.get("numeroRegistroPlano"))
+            sub(identBeneficiario_el, "numeroCartaoNacionalSaude", linha_guia.get("numeroCartaoNacionalSaude"))
+            sub(identBeneficiario_el, "cpfBeneficiario", linha_guia.get("cpfBeneficiario"))
+            sub(identBeneficiario_el, "sexo", linha_guia.get("sexo"), is_code=True)
+            sub(identBeneficiario_el, "dataNascimento", linha_guia.get("dataNascimento"), is_date=True)
+            sub(identBeneficiario_el, "municipioResidencia", linha_guia.get("municipioResidencia"))
+            sub(dadosBeneficiario_el, "numeroRegistroPlano", linha_guia.get("numeroRegistroPlano"))
 
-            ET.SubElement(guia, "ans:tipoEventoAtencao").text = clean_value(linha_guia.get("tipoEventoAtencao"), is_code=True)
-            ET.SubElement(guia, "ans:origemEventoAtencao").text = clean_value(linha_guia.get("origemEventoAtencao"), is_code=True)
-            ET.SubElement(guia, "ans:numeroGuia_prestador").text = clean_value(linha_guia.get("numeroGuia_prestador"))
-            ET.SubElement(guia, "ans:numeroGuia_operadora").text = clean_value(linha_guia.get("numeroGuia_operadora"))
-            ET.SubElement(guia, "ans:identificacaoReembolso").text = clean_value(linha_guia.get("identificacaoReembolso"))
+            sub(guia, "tipoEventoAtencao", linha_guia.get("tipoEventoAtencao"), is_code=True)
+            sub(guia, "origemEventoAtencao", linha_guia.get("origemEventoAtencao"), is_code=True)
+            sub(guia, "numeroGuia_prestador", linha_guia.get("numeroGuia_prestador"))
+            sub(guia, "numeroGuia_operadora", linha_guia.get("numeroGuia_operadora"))
+            sub(guia, "identificacaoReembolso", linha_guia.get("identificacaoReembolso"))
             
-            formasRemuneracao_el = ET.SubElement(guia, "ans:formasRemuneracao")
-            ET.SubElement(formasRemuneracao_el, "ans:formaRemuneracao").text = clean_value(linha_guia.get("formaRemuneracao"), is_code=True)
-            ET.SubElement(formasRemuneracao_el, "ans:valorRemuneracao").text = clean_value(linha_guia.get("valorRemuneracao"))
+            # Bloco de remuneração só é criado se houver dados
+            if pd.notna(linha_guia.get("formaRemuneracao")) or pd.notna(linha_guia.get("valorRemuneracao")):
+                formasRemuneracao_el = ET.SubElement(guia, "ans:formasRemuneracao")
+                sub(formasRemuneracao_el, "formaRemuneracao", linha_guia.get("formaRemuneracao"), is_code=True)
+                sub(formasRemuneracao_el, "valorRemuneracao", linha_guia.get("valorRemuneracao"))
             
-            ET.SubElement(guia, "ans:guiaSolicitacaoInternacao").text = clean_value(linha_guia.get("guiaSolicitacaoInternacao"))
-            ET.SubElement(guia, "ans:dataSolicitacao").text = clean_value(linha_guia.get("dataSolicitacao"), is_date=True)
-            ET.SubElement(guia, "ans:numeroGuiaSPSADTPrincipal").text = clean_value(linha_guia.get("numeroGuiaSPSADTPrincipal"))
-            ET.SubElement(guia, "ans:dataAutorizacao").text = clean_value(linha_guia.get("dataAutorizacao"), is_date=True)
-            ET.SubElement(guia, "ans:dataRealizacao").text = clean_value(linha_guia.get("dataRealizacao"), is_date=True)
-            ET.SubElement(guia, "ans:dataInicialFaturamento").text = clean_value(linha_guia.get("dataInicialFaturamento"), is_date=True)
-            ET.SubElement(guia, "ans:dataFimPeriodo").text = clean_value(linha_guia.get("dataFimPeriodo"), is_date=True)
-            ET.SubElement(guia, "ans:dataProtocoloCobranca").text = clean_value(linha_guia.get("dataProtocoloCobranca"), is_date=True)
-            ET.SubElement(guia, "ans:dataPagamento").text = clean_value(linha_guia.get("dataPagamento"), is_date=True)
-            ET.SubElement(guia, "ans:dataProcessamentoGuia").text = clean_value(linha_guia.get("dataProcessamentoGuia"), is_date=True)
-            ET.SubElement(guia, "ans:tipoConsulta").text = clean_value(linha_guia.get("tipoConsulta"), is_code=True)
-            ET.SubElement(guia, "ans:cboExecutante").text = clean_value(linha_guia.get("cboExecutante"))
-            ET.SubElement(guia, "ans:indicacaoRecemNato").text = clean_value(linha_guia.get("indicacaoRecemNato"), is_code=True)
-            ET.SubElement(guia, "ans:indicacaoAcidente").text = clean_value(linha_guia.get("indicacaoAcidente"), is_code=True)
-            ET.SubElement(guia, "ans:caraterAtendimento").text = clean_value(linha_guia.get("caraterAtendimento"), is_code=True)
-            ET.SubElement(guia, "ans:tipoInternacao").text = clean_value(linha_guia.get("tipoInternacao"), is_code=True)
-            ET.SubElement(guia, "ans:regimeInternacao").text = clean_value(linha_guia.get("regimeInternacao"), is_code=True)
+            sub(guia, "guiaSolicitacaoInternacao", linha_guia.get("guiaSolicitacaoInternacao"))
+            sub(guia, "dataSolicitacao", linha_guia.get("dataSolicitacao"), is_date=True)
+            sub(guia, "numeroGuiaSPSADTPrincipal", linha_guia.get("numeroGuiaSPSADTPrincipal"))
+            sub(guia, "dataAutorizacao", linha_guia.get("dataAutorizacao"), is_date=True)
+            sub(guia, "dataRealizacao", linha_guia.get("dataRealizacao"), is_date=True)
+            sub(guia, "dataInicialFaturamento", linha_guia.get("dataInicialFaturamento"), is_date=True)
+            sub(guia, "dataFimPeriodo", linha_guia.get("dataFimPeriodo"), is_date=True)
+            sub(guia, "dataProtocoloCobranca", linha_guia.get("dataProtocoloCobranca"), is_date=True)
+            sub(guia, "dataPagamento", linha_guia.get("dataPagamento"), is_date=True)
+            sub(guia, "dataProcessamentoGuia", linha_guia.get("dataProcessamentoGuia"), is_date=True)
+            sub(guia, "tipoConsulta", linha_guia.get("tipoConsulta"), is_code=True)
+            sub(guia, "cboExecutante", linha_guia.get("cboExecutante"))
+            sub(guia, "indicacaoRecemNato", linha_guia.get("indicacaoRecemNato"), is_code=True)
+            sub(guia, "indicacaoAcidente", linha_guia.get("indicacaoAcidente"), is_code=True)
+            sub(guia, "caraterAtendimento", linha_guia.get("caraterAtendimento"), is_code=True)
+            sub(guia, "tipoInternacao", linha_guia.get("tipoInternacao"), is_code=True)
+            sub(guia, "regimeInternacao", linha_guia.get("regimeInternacao"), is_code=True)
             
-            diagnosticosCID10_el = ET.SubElement(guia, "ans:diagnosticosCID10")
-            ET.SubElement(diagnosticosCID10_el, "ans:diagnosticoCID").text = clean_value(linha_guia.get("diagnosticoCID"))
+            # Bloco de diagnóstico só é criado se houver CID
+            if pd.notna(linha_guia.get("diagnosticoCID")):
+                diagnosticosCID10_el = ET.SubElement(guia, "ans:diagnosticosCID10")
+                sub(diagnosticosCID10_el, "diagnosticoCID", linha_guia.get("diagnosticoCID"))
             
-            ET.SubElement(guia, "ans:tipoAtendimento").text = clean_value(linha_guia.get("tipoAtendimento"), is_code=True)
-            ET.SubElement(guia, "ans:regimeAtendimento").text = clean_value(linha_guia.get("regimeAtendimento"), is_code=True)
-            ET.SubElement(guia, "ans:tipoFaturamento").text = clean_value(linha_guia.get("tipoFaturamento"), is_code=True)
-            ET.SubElement(guia, "ans:diariasAcompanhante").text = clean_value(linha_guia.get("diariasAcompanhante"))
-            ET.SubElement(guia, "ans:diariasUTI").text = clean_value(linha_guia.get("diariasUTI"))
-            ET.SubElement(guia, "ans:motivoSaida").text = clean_value(linha_guia.get("motivoSaida"), is_code=True)
+            sub(guia, "tipoAtendimento", linha_guia.get("tipoAtendimento"), is_code=True)
+            sub(guia, "regimeAtendimento", linha_guia.get("regimeAtendimento"), is_code=True)
+            sub(guia, "tipoFaturamento", linha_guia.get("tipoFaturamento"), is_code=True)
+            sub(guia, "diariasAcompanhante", linha_guia.get("diariasAcompanhante"))
+            sub(guia, "diariasUTI", linha_guia.get("diariasUTI"))
+            sub(guia, "motivoSaida", linha_guia.get("motivoSaida"), is_code=True)
 
             valoresGuia_el = ET.SubElement(guia, "ans:valoresGuia")
-            ET.SubElement(valoresGuia_el, "ans:valorTotalInformado").text = clean_value(linha_guia.get("valorTotalInformado"))
-            ET.SubElement(valoresGuia_el, "ans:valorProcessado").text = clean_value(linha_guia.get("valorProcessado"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalPagoProcedimentos").text = clean_value(linha_guia.get("valorTotalPagoProcedimentos"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalDiarias").text = clean_value(linha_guia.get("valorTotalDiarias"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalTaxas").text = clean_value(linha_guia.get("valorTotalTaxas"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalMateriais").text = clean_value(linha_guia.get("valorTotalMateriais"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalOPME").text = clean_value(linha_guia.get("valorTotalOPME"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalMedicamentos").text = clean_value(linha_guia.get("valorTotalMedicamentos"))
-            ET.SubElement(valoresGuia_el, "ans:valorGlosaGuia").text = clean_value(linha_guia.get("valorGlosaGuia"))
-            ET.SubElement(valoresGuia_el, "ans:valorPagoGuia").text = clean_value(linha_guia.get("valorPagoGuia"))
-            ET.SubElement(valoresGuia_el, "ans:valorPagoFornecedores").text = clean_value(linha_guia.get("valorPagoFornecedores"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalTabelaPropria").text = clean_value(linha_guia.get("valorTotalTabelaPropria"))
-            ET.SubElement(valoresGuia_el, "ans:valorTotalCoParticipacao").text = clean_value(linha_guia.get("valorTotalCoParticipacao"))
+            sub(valoresGuia_el, "valorTotalInformado", linha_guia.get("valorTotalInformado"))
+            sub(valoresGuia_el, "valorProcessado", linha_guia.get("valorProcessado"))
+            sub(valoresGuia_el, "valorTotalPagoProcedimentos", linha_guia.get("valorTotalPagoProcedimentos"))
+            sub(valoresGuia_el, "valorTotalDiarias", linha_guia.get("valorTotalDiarias"))
+            sub(valoresGuia_el, "valorTotalTaxas", linha_guia.get("valorTotalTaxas"))
+            sub(valoresGuia_el, "valorTotalMateriais", linha_guia.get("valorTotalMateriais"))
+            sub(valoresGuia_el, "valorTotalOPME", linha_guia.get("valorTotalOPME"))
+            sub(valoresGuia_el, "valorTotalMedicamentos", linha_guia.get("valorTotalMedicamentos"))
+            sub(valoresGuia_el, "valorGlosaGuia", linha_guia.get("valorGlosaGuia"))
+            sub(valoresGuia_el, "valorPagoGuia", linha_guia.get("valorPagoGuia"))
+            sub(valoresGuia_el, "valorPagoFornecedores", linha_guia.get("valorPagoFornecedores"))
+            sub(valoresGuia_el, "valorTotalTabelaPropria", linha_guia.get("valorTotalTabelaPropria"))
+            sub(valoresGuia_el, "valorTotalCoParticipacao", linha_guia.get("valorTotalCoParticipacao"))
 
-            ET.SubElement(guia, "ans:declaracaoNascido").text = clean_value(linha_guia.get("declaracaoNascido"))
-            ET.SubElement(guia, "ans:declaracaoObito").text = clean_value(linha_guia.get("declaracaoObito"))
+            sub(guia, "declaracaoNascido", linha_guia.get("declaracaoNascido"))
+            sub(guia, "declaracaoObito", linha_guia.get("declaracaoObito"))
 
             for _, proc_linha in grupo_guia_key.iterrows():
                 if pd.notna(proc_linha.get("codigoProcedimento")) or pd.notna(proc_linha.get("grupoProcedimento")):
                     procedimentos_el = ET.SubElement(guia, "ans:procedimentos")
                     identProcedimento_el = ET.SubElement(procedimentos_el, "ans:identProcedimento")
-                    ET.SubElement(identProcedimento_el, "ans:codigoTabela").text = clean_value(proc_linha.get("codigoTabela"), is_code=True)
+                    sub(identProcedimento_el, "codigoTabela", proc_linha.get("codigoTabela"), is_code=True)
                     Procedimento_el = ET.SubElement(identProcedimento_el, "ans:Procedimento")
-                    ET.SubElement(Procedimento_el, "ans:grupoProcedimento").text = clean_value(proc_linha.get("grupoProcedimento"), is_code=True)
-                    ET.SubElement(Procedimento_el, "ans:codigoProcedimento").text = clean_value(proc_linha.get("codigoProcedimento"))
                     
-                    ET.SubElement(procedimentos_el, "ans:quantidadeInformada").text = clean_value(proc_linha.get("quantidadeInformada"))
-                    ET.SubElement(procedimentos_el, "ans:valorInformado").text = clean_value(proc_linha.get("valorInformado_proc"))
-                    ET.SubElement(procedimentos_el, "ans:quantidadePaga").text = clean_value(proc_linha.get("quantidadePaga"))
-                    ET.SubElement(procedimentos_el, "ans:unidadeMedida").text = clean_value(proc_linha.get("unidadeMedida"), is_code=True)
-                    ET.SubElement(procedimentos_el, "ans:valorPagoProc").text = clean_value(proc_linha.get("valorPagoProc"))
-                    ET.SubElement(procedimentos_el, "ans:valorPagoFornecedor").text = clean_value(proc_linha.get("valorPagoFornecedor_proc"))
-                    ET.SubElement(procedimentos_el, "ans:valorCoParticipacao").text = clean_value(proc_linha.get("valorCoParticipacao"))
+                    if pd.notna(proc_linha.get("grupoProcedimento")):
+                        sub(Procedimento_el, "grupoProcedimento", proc_linha.get("grupoProcedimento"), is_code=True)
+                    elif pd.notna(proc_linha.get("codigoProcedimento")):
+                        sub(Procedimento_el, "codigoProcedimento", proc_linha.get("codigoProcedimento"))
+                    
+                    sub(procedimentos_el, "quantidadeInformada", proc_linha.get("quantidadeInformada"))
+                    sub(procedimentos_el, "valorInformado", proc_linha.get("valorInformado_proc"))
+                    sub(procedimentos_el, "quantidadePaga", proc_linha.get("quantidadePaga"))
+                    sub(procedimentos_el, "unidadeMedida", proc_linha.get("unidadeMedida"), is_code=True)
+                    sub(procedimentos_el, "valorPagoProc", proc_linha.get("valorPagoProc"))
+                    sub(procedimentos_el, "valorPagoFornecedor", proc_linha.get("valorPagoFornecedor_proc"))
+                    sub(procedimentos_el, "valorCoParticipacao", proc_linha.get("valorCoParticipacao"))
 
         # --- Finalização com Hash e Formatação ---
         conteudo_cabecalho = ''.join(extrair_texto(cabecalho))
