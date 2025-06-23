@@ -193,39 +193,39 @@ def remove_duplicate_columns(df):
 
 
 def gerar_xte_do_excel(excel_file):
-    print("--- DEBUG: Gerando XTE com Lógica Condicional (versão completa e corrigida) ---")
+    print("--- DEBUG: Gerando XTE com regras de lote e reembolso (versão completa) ---")
     ns = "http://www.ans.gov.br/padroes/tiss/schemas"
 
-    # --- Setup e Leitura do Arquivo ---
+    # --- Setup de Data/Hora e Leitura do Arquivo ---
     fuso_horario_servidor = pytz.utc
     fuso_horario_desejado = pytz.timezone("America/Sao_Paulo")
     agora_no_fuso_desejado = datetime.now(fuso_horario_servidor).astimezone(fuso_horario_desejado)
     data_atual = agora_no_fuso_desejado.strftime("%Y-%m-%d")
     hora_atual = agora_no_fuso_desejado.strftime("%H:%M:%S")
 
+    # NOVO AJUSTE 1: Geração automática do número do lote no formato AnoMêsHoraSegundos
+    numero_lote_automatico = agora_no_fuso_desejado.strftime("%Y%m%H%S")
+
     if hasattr(excel_file, 'name') and excel_file.name.endswith('.csv'):
         df = pd.read_csv(excel_file, dtype=str, sep=';')
     else:
         df = pd.read_excel(excel_file, dtype=str)
 
-    # --- Função Auxiliar 'sub' Simplificada e Correta ---
+    # --- Função Auxiliar 'sub' ---
     def sub(parent, tag, value, is_date=False):
         if pd.isna(value):
-            return  # Se o valor for nulo, não faz nada.
-
+            return
         text = str(value).strip()
-
         if is_date and text:
             original_text = text
-            text = original_text # Mantém o original por padrão se a formatação falhar
+            text = original_text
             for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
                 try:
                     text = datetime.strptime(original_text, fmt).strftime("%Y-%m-%d")
                     break
                 except ValueError:
                     continue
-        
-        if text: # A REGRA DE OURO: Só cria a tag se houver texto.
+        if text:
             ET.SubElement(parent, f"ans:{tag}").text = text
 
     def extrair_texto(elemento):
@@ -244,23 +244,23 @@ def gerar_xte_do_excel(excel_file):
     for nome_arquivo, df_origem in df.groupby("Nome da Origem"):
         if df_origem.empty: continue
 
-        # Agrupa por guia
         agrupado = df_origem.groupby(
             ["numeroGuia_prestador", "numeroGuia_operadora", "identificacaoReembolso"], dropna=False
         )
         
-        # Cria a estrutura raiz do XML
         root = ET.Element("ans:mensagemEnvioANS", attrib={
             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance", "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
             "xsi:schemaLocation": f"{ns} {ns}/tissMonitoramentoV1_04_01.xsd", "xmlns:ans": ns
         })
         
-        # --- Bloco do Cabeçalho ---
         linha_cabecalho = df_origem.iloc[0]
+        
+        # --- Bloco do Cabeçalho ---
         cabecalho = ET.SubElement(root, "ans:cabecalho")
         identificacaoTransacao = ET.SubElement(cabecalho, "ans:identificacaoTransacao")
         sub(identificacaoTransacao, "tipoTransacao", "MONITORAMENTO")
-        sub(identificacaoTransacao, "numeroLote", linha_cabecalho.get("numeroLote"))
+        # NOVO AJUSTE 1: Usa o número de lote automático
+        sub(identificacaoTransacao, "numeroLote", numero_lote_automatico)
         sub(identificacaoTransacao, "competenciaLote", linha_cabecalho.get("competenciaLote"))
         sub(identificacaoTransacao, "dataRegistroTransacao", data_atual)
         sub(identificacaoTransacao, "horaRegistroTransacao", hora_atual)
@@ -302,7 +302,15 @@ def gerar_xte_do_excel(excel_file):
             sub(guia, "origemEventoAtencao", linha_guia.get("origemEventoAtencao"))
             sub(guia, "numeroGuia_prestador", linha_guia.get("numeroGuia_prestador"))
             sub(guia, "numeroGuia_operadora", linha_guia.get("numeroGuia_operadora"))
-            sub(guia, "identificacaoReembolso", linha_guia.get("identificacaoReembolso"))
+            
+            # NOVO AJUSTE 2: Lógica condicional para identificacaoReembolso
+            origem_evento = linha_guia.get("origemEventoAtencao")
+            valor_reembolso = ""
+            if origem_evento in ['1', '2', '3']:
+                valor_reembolso = "00000000000000000000"
+            else:
+                valor_reembolso = linha_guia.get("identificacaoReembolso")
+            sub(guia, "identificacaoReembolso", valor_reembolso)
             
             if pd.notna(linha_guia.get("formaRemuneracao")) or pd.notna(linha_guia.get("valorRemuneracao")):
                 formasRemuneracao_el = ET.SubElement(guia, "ans:formasRemuneracao")
