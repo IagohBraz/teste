@@ -193,7 +193,7 @@ def remove_duplicate_columns(df):
 
 
 def gerar_xte_do_excel(excel_file):
-    print("--- DEBUG: Gerando XTE com regras de lote e reembolso (versão completa) ---")
+    print("--- DEBUG: Gerando XTE com lote por Minuto e Segundo (versão completa) ---")
     ns = "http://www.ans.gov.br/padroes/tiss/schemas"
 
     # --- Setup de Data/Hora e Leitura do Arquivo ---
@@ -203,8 +203,8 @@ def gerar_xte_do_excel(excel_file):
     data_atual = agora_no_fuso_desejado.strftime("%Y-%m-%d")
     hora_atual = agora_no_fuso_desejado.strftime("%H:%M:%S")
 
-    # NOVO AJUSTE 1: Geração automática do número do lote no formato AnoMêsHoraSegundos
-    numero_lote_automatico = agora_no_fuso_desejado.strftime("%Y%m%H%S")
+    # AJUSTE FINAL: Trocando Hora (%H) por Minuto (%M) na composição do lote.
+    minuto_e_segundos_atuais = agora_no_fuso_desejado.strftime("%M%S")
 
     if hasattr(excel_file, 'name') and excel_file.name.endswith('.csv'):
         df = pd.read_csv(excel_file, dtype=str, sep=';')
@@ -259,8 +259,16 @@ def gerar_xte_do_excel(excel_file):
         cabecalho = ET.SubElement(root, "ans:cabecalho")
         identificacaoTransacao = ET.SubElement(cabecalho, "ans:identificacaoTransacao")
         sub(identificacaoTransacao, "tipoTransacao", "MONITORAMENTO")
-        # NOVO AJUSTE 1: Usa o número de lote automático
-        sub(identificacaoTransacao, "numeroLote", numero_lote_automatico)
+        
+        # AJUSTE FINAL: Geração do numeroLote com Minuto e Segundo
+        competencia = linha_cabecalho.get("competenciaLote", "")
+        if competencia and len(competencia) == 6 and competencia.isdigit():
+            numero_lote_final = f"{competencia}{minuto_e_segundos_atuais}"
+        else:
+            ano_e_mes_atuais = agora_no_fuso_desejado.strftime("%Y%m")
+            numero_lote_final = f"{ano_e_mes_atuais}{minuto_e_segundos_atuais}"
+
+        sub(identificacaoTransacao, "numeroLote", numero_lote_final)
         sub(identificacaoTransacao, "competenciaLote", linha_cabecalho.get("competenciaLote"))
         sub(identificacaoTransacao, "dataRegistroTransacao", data_atual)
         sub(identificacaoTransacao, "horaRegistroTransacao", hora_atual)
@@ -303,7 +311,6 @@ def gerar_xte_do_excel(excel_file):
             sub(guia, "numeroGuia_prestador", linha_guia.get("numeroGuia_prestador"))
             sub(guia, "numeroGuia_operadora", linha_guia.get("numeroGuia_operadora"))
             
-            # NOVO AJUSTE 2: Lógica condicional para identificacaoReembolso
             origem_evento = linha_guia.get("origemEventoAtencao")
             valor_reembolso = ""
             if origem_evento in ['1', '2', '3']:
