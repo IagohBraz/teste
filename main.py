@@ -24,30 +24,7 @@ def parse_xte(file):
     ns = {'ans': 'http://www.ans.gov.br/padroes/tiss/schemas'}
     all_data = []
     
-    colunas_para_manter = [
-        'Nome da Origem', 'tipoRegistro', 'versaoTISSPrestador', 'formaEnvio', 'CNES',
-        'identificadorExecutante', 'codigoCNPJ_CPF', 'municipioExecutante', 'numeroCartaoNacionalSaude',
-        'cpfBeneficiario', 'sexo', 'dataNascimento', 'municipioResidencia', 'numeroRegistroPlano',
-        'tipoEventoAtencao', 'origemEventoAtencao', 'numeroGuia_prestador', 'numeroGuia_operadora',
-        'identificacaoReembolso', 'formaRemuneracao', 'valorRemuneracao', 'dataAutorizacao',
-        'dataRealizacao', 'dataProtocoloCobranca', 'dataPagamento', 'dataProcessamentoGuia',
-        'tipoConsulta', 'indicacaoRecemNato', 'indicacaoAcidente', 'caraterAtendimento',
-        'tipoAtendimento', 'regimeAtendimento', 'valorTotalInformado', 'valorProcessado',
-        'valorTotalPagoProcedimentos', 'valorTotalDiarias', 'valorTotalTaxas', 'valorTotalMateriais',
-        'valorTotalOPME', 'valorTotalMedicamentos', 'valorGlosaGuia', 'valorPagoGuia',
-        'valorPagoFornecedores', 'valorTotalTabelaPropria', 'valorTotalCoParticipacao',
-        'codigoTabela', 'grupoProcedimento', 'quantidadeInformada', 'codigoProcedimento',
-        'valorInformado', 'valorPagoProc', 'quantidadePaga', 'valorPagoFornecedor',
-        'valorCoParticipacao', 'unidadeMedida', 'numeroGuiaSPSADTPrincipal', 'tipoInternacao',
-        'regimeInternacao', 'diagnosticoCID', 'tipoFaturamento', 'motivoSaida', 'cboExecutante',
-        'dataFimPeriodo','dataInicialFaturamento', 'declaracaoObito', 'declaracaoNascido', 'Idade_na_Realização',
-        'registroANSOperadoraIntermediaria', 'tipoAtendimentoOperadoraIntermediaria',
-        # Novos campos de cabeçalho:
-        'tipoTransacao', 'numeroLote', 'competenciaLote', 'dataRegistroTransacao',
-        'horaRegistroTransacao', 'registroANS', 'versaoPadrao'
-    ]
-
-    # 👇 Coleta as informações do cabecalho uma vez
+    # Coleta as informações do cabecalho uma vez
     cabecalho_info = {}
     cabecalho = root.find('.//ans:cabecalho', namespaces=ns)
     if cabecalho is not None:
@@ -63,9 +40,9 @@ def parse_xte(file):
 
     for guia in root.findall(".//ans:guiaMonitoramento", namespaces=ns):
         guia_data = {}
-        # Adicionar cabecalho info a cada linha
         guia_data.update(cabecalho_info)
 
+        # Loop principal para ler todas as tags como texto
         for elem in guia.iter():
             tag_full = elem.tag.split('}')[-1]
             if 'data' in tag_full.lower() and elem.text:
@@ -81,36 +58,17 @@ def parse_xte(file):
         if procedimentos:
             for proc in procedimentos:
                 proc_data = guia_data.copy()
-
-                proc_data['codigoProcedimento'] = (proc.findtext(
-                    'ans:identProcedimento/ans:Procedimento/ans:codigoProcedimento',
-                    namespaces=ns
-                ) or '').strip()
-
-                proc_data['grupoProcedimento'] = (proc.findtext(
-                    'ans:identProcedimento/ans:Procedimento/ans:grupoProcedimento',
-                    namespaces=ns
-                ) or '').strip()
-
+                # Extração específica dos procedimentos
+                proc_data['codigoProcedimento'] = (proc.findtext('ans:identProcedimento/ans:Procedimento/ans:codigoProcedimento', namespaces=ns) or '').strip()
+                proc_data['grupoProcedimento'] = (proc.findtext('ans:identProcedimento/ans:Procedimento/ans:grupoProcedimento', namespaces=ns) or '').strip()
                 proc_data['valorInformado'] = (proc.findtext('ans:valorInformado', namespaces=ns) or '').strip()
                 proc_data['valorPagoProc'] = (proc.findtext('ans:valorPagoProc', namespaces=ns) or '').strip()
-
-                campos_procedimento = [
-                    'quantidadeInformada', 'quantidadePaga',
-                    'valorPagoFornecedor', 'valorCoParticipacao',
-                    'unidadeMedida'
-                ]
+                campos_procedimento = ['quantidadeInformada', 'quantidadePaga', 'valorPagoFornecedor', 'valorCoParticipacao', 'unidadeMedida']
                 for campo in campos_procedimento:
                     proc_data[campo] = (proc.findtext(f'ans:{campo}', namespaces=ns) or '').strip()
-
-                proc_data['codigoTabela'] = (proc.findtext(
-                    'ans:identProcedimento/ans:codigoTabela',
-                    namespaces=ns
-                ) or '').strip()
-                # ADICIONE ISSO APÓS OS OUTROS CAMPOS DO PROCEDIMENTO:
+                proc_data['codigoTabela'] = (proc.findtext('ans:identProcedimento/ans:codigoTabela', namespaces=ns) or '').strip()
                 proc_data['registroANSOperadoraIntermediaria'] = (proc.findtext('ans:registroANSOperadoraIntermediaria', namespaces=ns) or '').strip()
                 proc_data['tipoAtendimentoOperadoraIntermediaria'] = (proc.findtext('ans:tipoAtendimentoOperadoraIntermediaria', namespaces=ns) or '').strip()
-
                 all_data.append(proc_data)
         else:
             all_data.append(guia_data)
@@ -125,9 +83,6 @@ def parse_xte(file):
         except Exception:
             pass
 
-    colunas_existentes = [col for col in colunas_para_manter if col in df.columns]
-    df = df[colunas_existentes]
-
     # Calcular idade
     if 'dataRealizacao' in df.columns and 'dataNascimento' in df.columns:
         def calcular_idade(row):
@@ -139,12 +94,9 @@ def parse_xte(file):
                 return None
         df['Idade_na_Realização'] = df.apply(calcular_idade, axis=1)
 
-    # Corrigir campos com zeros à esquerda para Power BI/Excel
-    for col in ['numeroGuia_prestador', 'numeroGuia_operadora', 'identificacaoReembolso']:
-        if col in df.columns:
-            df[col] = df[col].apply(lambda x: str(int(x)) if pd.notna(x) and isinstance(x, str) and x.isdigit() else x)
+    # --- BLOCO DE REMOÇÃO DE ZEROS À ESQUERDA FOI REMOVIDO DAQUI ---
 
-    # --- NOVO: Padronização e ordenação das colunas ---
+    # --- Padronização e ordenação das colunas (sem alterações) ---
     df.rename(columns={
         'valorInformado': 'valorInformado_proc',
         'valorPagoFornecedor': 'valorPagoFornecedor_proc',
@@ -180,8 +132,8 @@ def parse_xte(file):
     for col in colunas_finais:
         if col not in df.columns:
             df[col] = None
+    
     df = df[colunas_finais]
-    # --- FIM NOVO ---
 
     return df, content, tree
     
